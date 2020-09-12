@@ -10,6 +10,7 @@ from color_gradient import ColorGradient
 from undistorted_transform import Perspective
 from lane_fit import Lane
 import pipeline as p
+from line import Line
 
 import matplotlib.image as mpimg
 import numpy as np
@@ -24,6 +25,8 @@ camera = Camera()
 color = ColorGradient(gamma=0.5)
 perspective = Perspective()
 lane = Lane()
+left_line_lane = Line()
+right_line_lane = Line()
 
 def insertVideoValues(img, left_curverad, right_curverad, offset):
     position = (10,50)
@@ -36,7 +39,7 @@ def insertVideoValues(img, left_curverad, right_curverad, offset):
 
 for idx, fname in enumerate(images):
     img = mpimg.imread(fname)
-    result, left_curverad, right_curverad, offset = p.pipeline(img, camera, color, perspective, lane, toCompute)
+    result, left_curverad, right_curverad, offset = p.pipeline(img, camera, color, perspective, lane, left_line_lane, right_line_lane, toCompute)
     
     insertVideoValues(result, left_curverad, right_curverad, offset)
     cv2.imwrite("../output_images/output" + str(idx) + ".jpg", result)

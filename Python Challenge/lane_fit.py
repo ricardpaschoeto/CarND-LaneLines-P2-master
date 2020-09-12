@@ -7,7 +7,6 @@ Created on Wed Aug 26 17:50:41 2020
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
-from line import Line
 
 class Lane:
     
@@ -28,45 +27,13 @@ class Lane:
         # Fit Real World coeficients
         self.left_fit_cr = np.empty((2))
         self.right_fit_cr = np.empty((2))
-        # Data Left Lines
-        self.left_line_lane = Line()
-        self.right_line_lane = Line()
-        
-    def applyLaneCalculations(self, warped):
-        
-        # if (not self.left_line_lane.getDetected()):
-        #     leftx, lefty, rightx, righty = self.findLane(warped)
-            
-        # leftx, lefty, rightx, righty = self.searchAroundPoly(warped)
-        
-        # try:
-        #     left_fitx,leftx,lefty, right_fitx = self.fitPolynomial(warped, leftx, lefty, rightx, righty)
-        # except TypeError:
-        #     leftx, lefty, rightx, righty = self.findLane(warped)
-        #     left_fitx,leftx,lefty, right_fitx = self.fitPolynomial(warped, leftx, lefty, rightx, righty)
-        
-        # Fit new polynomials
-        left_fitx,leftx,lefty, right_fitx,rightx,righty, nonzerox, nonzeroy, left_lane_inds, right_lane_inds = self.fitPolynomial(warped)
-        self.left_line_lane.setRecentXfitted(left_fitx)
-        self.right_line_lane.setRecentXfitted(right_fitx)
-        #self.plotSearchAround(warped, nonzerox, nonzeroy, left_lane_inds, right_lane_inds, left_fitx,right_fitx)
-       
-        # # Determine the curvature of the lane and vehicle position with respect to center.
-        left_curverad, right_curvera = self.measureCurvatureReal()
-        self.left_line_lane.setRadius(left_curverad)
-        self.right_line_lane.setRadius(right_curvera)
-        #print((left_curverad,right_curvera))
-        
-        ## verify if paralell
-        paralell = self.tangent()
-        
-        # # Determine center position and x distance
-        center, xdistance, offset = self.vehicleCenterPos()
-        self.left_line_lane.setLineBasePos(center)
-        self.right_line_lane.setLineBasePos(center)
-        
-        return left_fitx, right_fitx, left_curverad, right_curvera, offset
-        
+        # Array of lines
+        self.array_left_line = []
+        self.array_right_line = []
+        # Count Losed Frames
+        self.PERMITTED_LOOSE_FRAMES = 2
+        self.count = 0
+
     def setLeftFit(self, left_fit):
         self.left_fit = left_fit
         
@@ -84,7 +51,65 @@ class Lane:
     
     def getPloty(self):
         return self.ploty
-   
+        
+    def applyLaneCalculations(self, warped, left_line_lane, right_line_lane):
+        
+        try:
+            left_fitx, right_fitx, leftx, lefty, rightx, righty = self.searchAroundPoly(warped, left_line_lane, right_line_lane)
+        except TypeError:
+            left_fitx, right_fitx, leftx, lefty, rightx, righty = self.findLane(warped)
+
+        left_line_lane.setCurrentFit(self.getLeftFit())
+        right_line_lane.setCurrentFit(self.getRightFit())
+        
+        left_line_lane.setRecentXfitted(left_fitx)
+        right_line_lane.setRecentXfitted(right_fitx)      
+        
+        if (len(self.array_left_line) > 1 and len(self.array_right_line) > 1):
+            while(not self.sanityCheck(left_line_lane, right_line_lane)):
+                print("Bad Result from Sanity!")
+                self.count = self.count + 1
+                if(self.count < self.PERMITTED_LOOSE_FRAMES):
+                    left_fitx, right_fitx, leftx, lefty, rightx, righty = self.searchAroundPoly(warped, self.array_left_line[-2], self.array_right_line[-2])
+                    left_line_lane.setCurrentFit(self.getLeftFit())
+                    right_line_lane.setCurrentFit(self.getRightFit())
+                    left_line_lane.setRecentXfitted(left_fitx)
+                    right_line_lane.setRecentXfitted(right_fitx) 
+                else:
+                    self.count = 0
+                    left_fitx, right_fitx, leftx, lefty, rightx, righty = self.findLane(warped)
+                    left_line_lane.setCurrentFit(self.getLeftFit())
+                    right_line_lane.setCurrentFit(self.getRightFit())
+                    left_line_lane.setRecentXfitted(left_fitx)
+                    right_line_lane.setRecentXfitted(right_fitx)  
+                    break
+        
+        left_line_lane.setAllx(leftx)
+        left_line_lane.setAlly(lefty)
+        
+        right_line_lane.setAllx(rightx)
+        right_line_lane.setAlly(righty)
+        
+        left_line_lane.setDiffs(left_line_lane.getBestFit() - self.getLeftFit())
+        right_line_lane.setDiffs(right_line_lane.getBestFit() - self.getRightFit())
+        
+        # # Determine the curvature of the lane and vehicle position with respect to center.
+        left_curverad, right_curvera = self.measureCurvatureReal()
+        
+        # # Determine center position and x distance
+        center, xdistance, offset = self.vehicleCenterPos(left_line_lane, right_line_lane)        
+        
+        left_line_lane.setRadius(left_curverad)
+        right_line_lane.setRadius(right_curvera)
+        
+        left_line_lane.setLineBasePos(center)
+        right_line_lane.setLineBasePos(center)
+        
+        self.array_left_line.append(left_line_lane)
+        self.array_right_line.append(right_line_lane) 
+        
+        return left_fitx, right_fitx, left_curverad, right_curvera, offset
+        
     def findLane(self, binary_warped):
         # Take a histogram of the bottom half of the image
         histogram = np.sum(binary_warped[binary_warped.shape[0]//2:,:], axis=0)
@@ -98,9 +123,9 @@ class Lane:
         leftx_current = leftx_base
         rightx_current = rightx_base
         
-        leftx, lefty, rightx, righty, nonzerox, nonzeroy, left_lane_inds, right_lane_inds = self.windows(binary_warped, leftx_current, rightx_current)
+        left_fitx, right_fitx, leftx, lefty, rightx, righty = self.windows(binary_warped, leftx_current, rightx_current)
 
-        return leftx, lefty, rightx, righty, nonzerox, nonzeroy, left_lane_inds, right_lane_inds
+        return left_fitx, right_fitx, leftx, lefty, rightx, righty
         
     def windows(self, binary_warped, leftx_current, rightx_current):
        
@@ -161,24 +186,19 @@ class Lane:
         rightx = nonzerox[right_lane_inds]
         righty = nonzeroy[right_lane_inds]
         
-        self.left_line_lane.setAllx(leftx)
-        self.left_line_lane.setAlly(lefty)
+        left_fitx, right_fitx = self.fitPolynomial(binary_warped, leftx, lefty, rightx, righty)        # Fit new polynomials
         
-        self.right_line_lane.setAllx(rightx)
-        self.right_line_lane.setAlly(righty)
-        
-  
-        return leftx, lefty, rightx, righty, nonzerox, nonzeroy, left_lane_inds, right_lane_inds
+        return left_fitx, right_fitx, leftx, lefty, rightx, righty
 
-    def searchAroundPoly(self, binary_warped):
+    def searchAroundPoly(self, binary_warped, left_line_lane, right_line_lane):
         # HYPERPARAMETER
         # Grab activated pixels
         nonzero = binary_warped.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
         
-        left_fit = self.left_line_lane.getBestFit()
-        right_fit =  self.right_line_lane.getBestFit()
+        left_fit = left_line_lane.getBestFit()
+        right_fit = right_line_lane.getBestFit()
         
         left_lane_inds = ((nonzerox > (left_fit[0]*(nonzeroy**2) + left_fit[1]*nonzeroy + 
                         left_fit[2] - self.margin)) & (nonzerox < (left_fit[0]*(nonzeroy**2) + 
@@ -192,43 +212,24 @@ class Lane:
         lefty = nonzeroy[left_lane_inds] 
         rightx = nonzerox[right_lane_inds]
         righty = nonzeroy[right_lane_inds]
-   
-        return leftx, lefty, rightx, righty, nonzerox, nonzeroy, left_lane_inds, right_lane_inds
-    
-    def fitPolynomial(self, binary_warped):
         
-        leftx = lefty = rightx = righty = []
+        left_fitx, right_fitx = self.fitPolynomial(binary_warped, leftx, lefty, rightx, righty)        # Fit new polynomials
+  
+        return left_fitx, right_fitx, leftx, lefty, rightx, righty
+    
+    def fitPolynomial(self, binary_warped, leftx, lefty, rightx, righty):
+        
         # Generate x and y values for plotting
         self.ploty = np.linspace(0, binary_warped.shape[0]-1, binary_warped.shape[0])
-        
-        if(self.left_line_lane.getDetected() or self.right_line_lane.getDetected()):
-            leftx, lefty, rightx, righty, nonzerox, nonzeroy, left_lane_inds, right_lane_inds = self.searchAroundPoly(binary_warped)
-        else:
-            leftx, lefty, rightx, righty, nonzerox, nonzeroy, left_lane_inds, right_lane_inds = self.findLane(binary_warped)
-            self.left_line_lane.setDetected(True)
-            self.right_line_lane.setDetected(True)
             
-        try:
-            # Fit a second order polynomial to each using `np.polyfit`
-            self.setLeftFit(np.polyfit(lefty, leftx, 2))
-            self.setRightFit(np.polyfit(righty, rightx, 2))            
-        except TypeError:
-            # Avoids an error if `left` and `right_fit` are still none or incorrect
-            leftx, lefty, rightx, righty, nonzerox, nonzeroy, left_lane_inds, right_lane_inds = self.findLane(binary_warped)
-            self.setLeftFit(np.polyfit(lefty, leftx, 2))
-            self.setRightFit(np.polyfit(righty, rightx, 2)) 
-
-        
-        self.left_line_lane.setCurrentFit(self.getLeftFit())
-        self.right_line_lane.setCurrentFit(self.getRightFit())
-        
-        self.left_line_lane.setDiffs(self.left_line_lane.getBestFit() - self.getLeftFit())
-        self.right_line_lane.setDiffs(self.right_line_lane.getBestFit() - self.getRightFit())
+        # Fit a second order polynomial to each using `np.polyfit`
+        self.setLeftFit(np.polyfit(lefty, leftx, 2))
+        self.setRightFit(np.polyfit(righty, rightx, 2))   
         
         left_fitx = self.left_fit[0]*self.ploty**2 + self.left_fit[1]*self.ploty + self.left_fit[2]
         right_fitx = self.right_fit[0]*self.ploty**2 + self.right_fit[1]*self.ploty + self.right_fit[2]
-
-        return left_fitx,leftx,lefty, right_fitx,rightx,righty, nonzerox, nonzeroy, left_lane_inds, right_lane_inds
+        
+        return left_fitx, right_fitx
 
     def measureCurvatureReal(self):
         '''
@@ -249,9 +250,9 @@ class Lane:
         
         return left_curverad, right_curverad
     
-    def vehicleCenterPos(self):
-        xleft = self.left_line_lane.getBestX()*self.xm_per_pix
-        xright = self.right_line_lane.getBestX()*self.xm_per_pix
+    def vehicleCenterPos(self, left_line_lane, right_line_lane):
+        xleft = left_line_lane.getBestX()*self.xm_per_pix
+        xright = right_line_lane.getBestX()*self.xm_per_pix
         
         center = np.abs((xright - xleft)/2)
         xdistance = np.abs(xright - xleft)
@@ -260,20 +261,35 @@ class Lane:
         
         return center, xdistance, offset
     
-    def tangent(self):
-        left_tan = 2*self.left_line_lane.getBestFit()[0]*self.left_line_lane.getAlly() + self.left_line_lane.getBestFit()[1]
-        right_tan = 2*self.right_line_lane.getBestFit()[0]*self.right_line_lane.getAlly() + self.right_line_lane.getBestFit()[1]
+    def tangent(self, left_line_lane, right_line_lane):
+        left_tan = 2*left_line_lane.getBestFit()[0]*left_line_lane.getAlly() + left_line_lane.getBestFit()[1]
+        right_tan = 2*right_line_lane.getBestFit()[0]*right_line_lane.getAlly() + right_line_lane.getBestFit()[1]
         
         avg_left_angle = np.abs(180*np.arctan(1/np.average(left_tan))/np.pi)
         avg_right_angle = np.abs(180*np.arctan(1/np.average(right_tan))/np.pi)
-        
-        # print(avg_left_angle)
-        # print(avg_right_angle)
         
         if(np.abs(avg_left_angle - avg_right_angle) <= 5.0):
             return True
         else:
             return False
+    
+    def checkDistanceLanes(self, left_line_lane, right_line_lane):
+        
+        if((left_line_lane.getBestX() <= self.array_left_line[-1].getBestX() + self.margin)
+           and (left_line_lane.getBestX() >= self.array_left_line[-1].getBestX() - self.margin)
+           and (right_line_lane.getBestX() <= self.array_right_line[-1].getBestX() + self.margin)
+           and (right_line_lane.getBestX() >= self.array_right_line[-1].getBestX() - self.margin)):       
+            return True
+        
+        return False
+    
+    def sanityCheck(self, left_line_lane, right_line_lane):
+        
+        if(self.tangent(left_line_lane, right_line_lane) and self.checkDistanceLanes(left_line_lane, right_line_lane)):
+            return True
+        
+        return False
+        
         
     def plotLlines(self,binary_warped, left_fitx,leftx,lefty, right_fitx,rightx,righty):
         ## Visualization ##
