@@ -43,7 +43,7 @@ class Line():
     def getRecentXfitted(self):
         return self.recent_xfitted
     
-    def setBestX(self):
+    def setBestX(self):        
         self.bestx = np.average(self.recent_xfitted)
     
     def getBestX(self):

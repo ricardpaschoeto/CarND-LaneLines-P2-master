@@ -7,6 +7,7 @@ Created on Wed Aug 26 17:50:41 2020
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
+from line import Line
 
 class Lane:
     
@@ -28,10 +29,10 @@ class Lane:
         self.left_fit_cr = np.empty((2))
         self.right_fit_cr = np.empty((2))
         # Array of lines
-        self.array_left_line = []
-        self.array_right_line = []
+        self.left_line_lane = Line()
+        self.right_line_lane = Line()
         # Count Losed Frames
-        self.PERMITTED_LOOSE_FRAMES = 2
+        self.PERMITTED_LOOSE_FRAMES = 29
         self.count = 0
 
     def setLeftFit(self, left_fit):
@@ -52,63 +53,56 @@ class Lane:
     def getPloty(self):
         return self.ploty
         
-    def applyLaneCalculations(self, warped, left_line_lane, right_line_lane):
+    def applyLaneCalculations(self, warped):
         
         try:
-            left_fitx, right_fitx, leftx, lefty, rightx, righty = self.searchAroundPoly(warped, left_line_lane, right_line_lane)
+            left_fitx, right_fitx, leftx, lefty, rightx, righty = self.searchAroundPoly(warped)
         except TypeError:
             left_fitx, right_fitx, leftx, lefty, rightx, righty = self.findLane(warped)
+            
+        # # Determine the curvature of the lane and vehicle position with respect to center.
+        left_curverad, right_curverad = self.measureCurvatureReal()
 
-        left_line_lane.setCurrentFit(self.getLeftFit())
-        right_line_lane.setCurrentFit(self.getRightFit())
-        
-        left_line_lane.setRecentXfitted(left_fitx)
-        right_line_lane.setRecentXfitted(right_fitx)      
-        
-        if (len(self.array_left_line) > 1 and len(self.array_right_line) > 1):
-            while(not self.sanityCheck(left_line_lane, right_line_lane)):
-                print("Bad Result from Sanity!")
+        if(len(self.left_line_lane.getRecentXfitted()) > 0 and len(self.right_line_lane.getRecentXfitted())> 0):
+            if (not self.sanityCheck(left_fitx, right_fitx, leftx, rightx)):
                 self.count = self.count + 1
+                print(self.count)
                 if(self.count < self.PERMITTED_LOOSE_FRAMES):
-                    left_fitx, right_fitx, leftx, lefty, rightx, righty = self.searchAroundPoly(warped, self.array_left_line[-2], self.array_right_line[-2])
-                    left_line_lane.setCurrentFit(self.getLeftFit())
-                    right_line_lane.setCurrentFit(self.getRightFit())
-                    left_line_lane.setRecentXfitted(left_fitx)
-                    right_line_lane.setRecentXfitted(right_fitx) 
+                    left_fitx = self.left_line_lane.getRecentXfitted()[-1]
+                    right_fitx = self.right_line_lane.getRecentXfitted()[-1]
+                    left_curverad = self.left_line_lane.getRadius()
+                    right_curverad = self.right_line_lane.getRadius()
+                    offset, centerToLeft, centerToRight = self.vehicleCenterPos(left_fitx, right_fitx)
+                    
+                    return left_fitx, right_fitx, left_curverad, right_curverad, offset
                 else:
                     self.count = 0
                     left_fitx, right_fitx, leftx, lefty, rightx, righty = self.findLane(warped)
-                    left_line_lane.setCurrentFit(self.getLeftFit())
-                    right_line_lane.setCurrentFit(self.getRightFit())
-                    left_line_lane.setRecentXfitted(left_fitx)
-                    right_line_lane.setRecentXfitted(right_fitx)  
-                    break
-        
-        left_line_lane.setAllx(leftx)
-        left_line_lane.setAlly(lefty)
-        
-        right_line_lane.setAllx(rightx)
-        right_line_lane.setAlly(righty)
-        
-        left_line_lane.setDiffs(left_line_lane.getBestFit() - self.getLeftFit())
-        right_line_lane.setDiffs(right_line_lane.getBestFit() - self.getRightFit())
+                
+        self.left_line_lane.setCurrentFit(self.getLeftFit())
+        self.right_line_lane.setCurrentFit(self.getRightFit())
+        self.left_line_lane.setRecentXfitted(left_fitx)
+        self.right_line_lane.setRecentXfitted(right_fitx)  
+        self.left_line_lane.setAllx(leftx)
+        self.left_line_lane.setAlly(lefty)
+        self.right_line_lane.setAllx(rightx)
+        self.right_line_lane.setAlly(righty)
+        self.left_line_lane.setDiffs(self.left_line_lane.getBestFit() - self.getLeftFit())
+        self.right_line_lane.setDiffs(self.right_line_lane.getBestFit() - self.getRightFit())
         
         # # Determine the curvature of the lane and vehicle position with respect to center.
-        left_curverad, right_curvera = self.measureCurvatureReal()
+        left_curverad, right_curverad = self.measureCurvatureReal()
         
         # # Determine center position and x distance
-        center, xdistance, offset = self.vehicleCenterPos(left_line_lane, right_line_lane)        
+        offset, centerToLeft, centerToRight = self.vehicleCenterPos(left_fitx, right_fitx)        
         
-        left_line_lane.setRadius(left_curverad)
-        right_line_lane.setRadius(right_curvera)
+        self.left_line_lane.setRadius(left_curverad)
+        self.right_line_lane.setRadius(right_curverad)
         
-        left_line_lane.setLineBasePos(center)
-        right_line_lane.setLineBasePos(center)
-        
-        self.array_left_line.append(left_line_lane)
-        self.array_right_line.append(right_line_lane) 
-        
-        return left_fitx, right_fitx, left_curverad, right_curvera, offset
+        self.left_line_lane.setLineBasePos(centerToLeft)
+        self.right_line_lane.setLineBasePos(centerToRight)
+                
+        return left_fitx, right_fitx, left_curverad, right_curverad, offset
         
     def findLane(self, binary_warped):
         # Take a histogram of the bottom half of the image
@@ -190,15 +184,15 @@ class Lane:
         
         return left_fitx, right_fitx, leftx, lefty, rightx, righty
 
-    def searchAroundPoly(self, binary_warped, left_line_lane, right_line_lane):
+    def searchAroundPoly(self, binary_warped):
         # HYPERPARAMETER
         # Grab activated pixels
         nonzero = binary_warped.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
         
-        left_fit = left_line_lane.getBestFit()
-        right_fit = right_line_lane.getBestFit()
+        left_fit = self.left_line_lane.getBestFit()
+        right_fit = self.right_line_lane.getBestFit()
         
         left_lane_inds = ((nonzerox > (left_fit[0]*(nonzeroy**2) + left_fit[1]*nonzeroy + 
                         left_fit[2] - self.margin)) & (nonzerox < (left_fit[0]*(nonzeroy**2) + 
@@ -250,42 +244,41 @@ class Lane:
         
         return left_curverad, right_curverad
     
-    def vehicleCenterPos(self, left_line_lane, right_line_lane):
-        xleft = left_line_lane.getBestX()*self.xm_per_pix
-        xright = right_line_lane.getBestX()*self.xm_per_pix
+    def vehicleCenterPos(self, left_fitx, right_fitx):
+        xleft = np.average(left_fitx)*self.xm_per_pix
+        xright = np.average(right_fitx)*self.xm_per_pix
         
-        center = np.abs((xright - xleft)/2)
-        xdistance = np.abs(xright - xleft)
-        
+        xdistance = np.abs(xright - xleft)        
         offset = 3.7 - xdistance
+        centerToLeft = np.abs((xright - xleft)/2)
+        centerToRight = xright - np.abs((xright - xleft)/2)
         
-        return center, xdistance, offset
+        return offset, centerToLeft, centerToRight
     
-    def tangent(self, left_line_lane, right_line_lane):
-        left_tan = 2*left_line_lane.getBestFit()[0]*left_line_lane.getAlly() + left_line_lane.getBestFit()[1]
-        right_tan = 2*right_line_lane.getBestFit()[0]*right_line_lane.getAlly() + right_line_lane.getBestFit()[1]
+    def tangent(self, leftx, rightx):
+        left_tan = 2*self.getLeftFit()[0]*leftx + self.getLeftFit()[1]
+        right_tan = 2*self.getRightFit()[0]*rightx + self.getRightFit()[1]
         
         avg_left_angle = np.abs(180*np.arctan(1/np.average(left_tan))/np.pi)
         avg_right_angle = np.abs(180*np.arctan(1/np.average(right_tan))/np.pi)
         
-        if(np.abs(avg_left_angle - avg_right_angle) <= 5.0):
+        if(np.abs(avg_left_angle - avg_right_angle) < 10.0):
             return True
         else:
             return False
     
-    def checkDistanceLanes(self, left_line_lane, right_line_lane):
-        
-        if((left_line_lane.getBestX() <= self.array_left_line[-1].getBestX() + self.margin)
-           and (left_line_lane.getBestX() >= self.array_left_line[-1].getBestX() - self.margin)
-           and (right_line_lane.getBestX() <= self.array_right_line[-1].getBestX() + self.margin)
-           and (right_line_lane.getBestX() >= self.array_right_line[-1].getBestX() - self.margin)):       
+    def checkDistanceLanes(self,left_fitx, right_fitx):
+        dc = (np.average(right_fitx) - np.average(left_fitx))*self.xm_per_pix
+        dcBeforeMin = 3.7 - 2*self.margin*self.xm_per_pix
+        dcBeforeMax = 3.7 + 2*self.margin*self.xm_per_pix
+        if(dc >= dcBeforeMin and dc <= dcBeforeMax):       
             return True
         
         return False
     
-    def sanityCheck(self, left_line_lane, right_line_lane):
+    def sanityCheck(self, left_fitx, right_fitx, leftx, rightx):
         
-        if(self.tangent(left_line_lane, right_line_lane) and self.checkDistanceLanes(left_line_lane, right_line_lane)):
+        if(self.tangent(leftx, rightx) and self.checkDistanceLanes(left_fitx, right_fitx)):
             return True
         
         return False

@@ -14,20 +14,26 @@ import cv2
 import numpy as np
 from line import Line
 
+src = np.float32([(600, 500),(280,720),(1110,720),(800,500)])
+dest = np.float32([(420, 0),(420, 720),(960, 720),(960, 0) ])
+
+#vertices = np.array([[(280,720),(600, 450), (800, 450), (1110,720)]], dtype=np.int32)
+
 toCompute = False
 camera = Camera()
 color = ColorGradient(gamma=0.5)
-perspective = Perspective()
+perspective = Perspective(src,dest)
 lane = Lane()
 left_line_lane = Line()
 right_line_lane = Line()
+
 
 def process_image(image, left_line_lane, right_line_lane):
     # NOTE: The output you return should be a color image (3 channel) for processing video below
     # TODO: put your pipeline here,
     # you should return the final output (image where lines are drawn on lanes)
     result, left_curverad, right_curverad, offset = p.pipeline(image, camera, color, perspective, lane, left_line_lane, right_line_lane, toCompute)
-    insertVideoValues(result, left_curverad, right_curverad, offset)
+    #insertVideoValues(result, left_curverad, right_curverad, offset)
     
     return result
 
@@ -38,7 +44,7 @@ def video_clip(path, left_line_lane, right_line_lane):
     ## You may also uncomment the following line for a subclip of the first 5 seconds
     
     white_output = 'test_videos_output/' + path
-    clip1 = VideoFileClip('../project_video.mp4').subclip(0,50)
+    clip1 = VideoFileClip('../challenge_video.mp4').subclip(0,50)
     white_clip = clip1.fl_image(lambda image: process_image(image, left_line_lane, right_line_lane)) #NOTE: this function expects color images!!
     white_clip.write_videofile(white_output, audio=False)
     

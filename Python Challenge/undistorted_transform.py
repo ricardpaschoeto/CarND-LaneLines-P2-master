@@ -15,12 +15,36 @@ class Perspective:
         # For destination points, I'm arbitrarily choosing some points to be
         # a nice fit for displaying our warped result 
         # again, not exact, but close enough for our purposes
+        #src = np.float32([(580, 460), (205, 720), (1110, 720), (703, 460)]), dest = np.float32([(320, 0), (320, 720), (960, 720), (960, 0)])
         self.dest = dest
         # For source points I'm grabbing the outer four detected corners
         self.src = src
+
+        
+    def defVertices(self, img):
+        x_shape, y_shape = img.shape[1], img.shape[0]
+        middle_x = x_shape//2
+        top_y = 2*y_shape//3
+        top_margin = 93
+        bottom_margin = 450
+        points = [
+            (middle_x-top_margin, top_y),
+            (middle_x+top_margin, top_y),
+            (middle_x+bottom_margin, y_shape),
+            (middle_x-bottom_margin, y_shape)
+        ]
+    
+        self.src = np.float32(points)
+        self.dest = np.float32([
+            (middle_x-bottom_margin, 0),
+            (middle_x+bottom_margin, 0),
+            (middle_x+bottom_margin, y_shape),
+            (middle_x-bottom_margin, y_shape)
+        ])
         
     def applyPerspective(self, img, mtx, dist):
         #region = self.region(img, vertices)
+        #self.defVertices(img)
         warped, M = self.cornersUnwarp(img, mtx, dist)
         
         return warped, M
@@ -60,6 +84,32 @@ class Perspective:
     
         # Return the resulting image and matrix
         return warped, M
+    
+    def regionOfInterest(self, img, vertices):
+        """
+        Applies an image mask.
+        
+        Only keeps the region of the image defined by the polygon
+        formed from `vertices`. The rest of the image is set to black.
+        `vertices` should be a numpy array of integer points.
+        """
+        #defining a blank mask to start with
+        mask = np.zeros_like(img)   
+        
+        #defining a 3 channel or 1 channel color to fill the mask with depending on the input image
+        if len(img.shape) > 2:
+            channel_count = img.shape[2]  # i.e. 3 or 4 depending on your image
+            ignore_mask_color = (255,) * channel_count
+        else:
+            ignore_mask_color = 255
+            
+        #filling pixels inside the polygon defined by "vertices" with the fill color    
+        cv2.fillPoly(mask, vertices, ignore_mask_color)
+        
+        #returning the image only where mask pixels are nonzero
+        masked_image = cv2.bitwise_and(img, mask)
+        
+        return masked_image
     
     def plotUndist(self, warped, img):
         f, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 9))
