@@ -25,9 +25,8 @@ class ColorGradient:
         
         combined = np.zeros_like(dir_bin)
         combined[(abs_bin == 1 | ((mag_bin == 1) & (dir_bin == 1))) | hls_bin == 1 ] = 1
-          
+        
         return combined
-
             
     def grayscale(self,img):
         return cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)

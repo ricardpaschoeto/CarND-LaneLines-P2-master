@@ -10,37 +10,15 @@ import matplotlib.pyplot as plt
 
 class Perspective:
     
-    def __init__(self,src = np.float32([(580, 460), (205, 720), (1110, 720), (703, 460)]), dest = np.float32([(320, 0), (320, 720), (960, 720), (960, 0)])):
+    def __init__(self,src, dest):
         
         # For destination points, I'm arbitrarily choosing some points to be
         # a nice fit for displaying our warped result 
         # again, not exact, but close enough for our purposes
-        #src = np.float32([(580, 460), (205, 720), (1110, 720), (703, 460)]), dest = np.float32([(320, 0), (320, 720), (960, 720), (960, 0)])
+        
         self.dest = dest
         # For source points I'm grabbing the outer four detected corners
         self.src = src
-
-        
-    def defVertices(self, img):
-        x_shape, y_shape = img.shape[1], img.shape[0]
-        middle_x = x_shape//2
-        top_y = 2*y_shape//3
-        top_margin = 93
-        bottom_margin = 450
-        points = [
-            (middle_x-top_margin, top_y),
-            (middle_x+top_margin, top_y),
-            (middle_x+bottom_margin, y_shape),
-            (middle_x-bottom_margin, y_shape)
-        ]
-    
-        self.src = np.float32(points)
-        self.dest = np.float32([
-            (middle_x-bottom_margin, 0),
-            (middle_x+bottom_margin, 0),
-            (middle_x+bottom_margin, y_shape),
-            (middle_x-bottom_margin, y_shape)
-        ])
         
     def applyPerspective(self, img, mtx, dist):
         #region = self.region(img, vertices)

@@ -17,11 +17,11 @@ import cv2
 
 class Pipeline:
     
-    def __init__(self, toCalibrate = False):
+    def __init__(self, toCalibrate = False ,src = np.float32([(580, 460), (205, 720), (1110, 720), (703, 460)]), dest = np.float32([(320, 0), (320, 720), (960, 720), (960, 0)])):
         
         self.camera = Camera()
         self.color = ColorGradient(gamma=0.5)
-        self.perspective = Perspective()
+        self.perspective = Perspective(src, dest)
         self.lane = Lane()
         self.toCalibrate = toCalibrate
 
@@ -42,14 +42,14 @@ class Pipeline:
         
         # # Apply a perspective transform to rectify binary image ("birds-eye view").    
         warped, M = self.perspective.applyPerspective(combined_binary, self.camera.getMtx(), self.camera.getDist())
-        #self.perspective.plotUndist(warped, combined_binary)
+        self.perspective.plotUndist(warped, combined_binary)
         
         # # Apply Lane Calculations
         left_fitx, right_fitx, left_curverad, right_curverad, offset = self.lane.applyLaneCalculations(warped)
         
         # # Warp the detected lane boundaries back onto the original image
         result = self.perspective.applyInversePerpectives(img, dst, warped, np.linalg.inv(M), left_fitx, right_fitx, self.lane.getPloty())
-        self.perspective.plotUndist(result,img)
+        #self.perspective.plotUndist(result,warped)
         
         #return warped, None, None, None
         return result, left_curverad, right_curverad, offset
